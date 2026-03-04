@@ -253,29 +253,44 @@ export default function WardrobeAI() {
 
   const addItem = () => {
     if (!form.type) return showToast("Select a clothing type!","error");
-    setWardrobe(p=>[...p,{id:Date.now(),...form,addedAt:new Date().toLocaleDateString()}]);
+    setWardrobe(p=>[...p,{id:Date.now(),...form,gender,addedAt:new Date().toLocaleDateString()}]);
     setForm({category:"",type:"",color:"Black",material:"",note:"",imagePreview:null});
     showToast("Added to wardrobe ✨");
   };
 
+  const myWardrobe = wardrobe.filter(w => w.gender === gender);
+
   const getSuggestions = async () => {
     if (!occasion) return showToast("Select an occasion first!","error");
-    if (wardrobe.length < 2) return showToast("Add at least 2 items first!","error");
+    if (myWardrobe.length < 2) return showToast("Add at least 2 items first!","error");
     setLoading(true); setSuggestions(null);
     const occ  = OCCASIONS.find(o=>o.id===occasion);
-    const list = wardrobe.map(w=>`- ${w.type} (${w.category}), Color: ${w.color}${w.material?`, Material: ${w.material}`:""}${w.note?`, Note: ${w.note}`:""}`).join("\n");
+    const list = myWardrobe.map(w=>`- ${w.type} (${w.category}), Color: ${w.color}${w.material?`, Material: ${w.material}`:""}${w.note?`, Note: ${w.note}`:""}`).join("\n");
     const p = `You are a top Indian fashion stylist. The user (${gender}) has these clothes:\n${list}\n\nSuggest 3 complete outfits for: ${occ.label} (${occ.desc}). Use ONLY items listed. Return ONLY valid JSON no markdown:\n{"occasion":"${occ.label}","outfits":[{"name":"...","items":["..."],"tip":"...","rating":9,"vibe":"..."}],"general_advice":"..."}`;
     try {
-      const res  = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,messages:[{role:"user",content:p}]})});
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": import.meta.env.VITE_ANTHROPIC_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,messages:[{role:"user",content:p}]})
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.error?.message || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       const raw  = data.content.map(i=>i.text||"").join("");
       setSuggestions(JSON.parse(raw.replace(/```json|```/g,"").trim()));
       setTab("suggestions");
-    } catch { showToast("AI error, try again","error"); }
+    } catch(e) { showToast(`AI Error: ${e.message}`,"error"); }
     finally { setLoading(false); }
   };
 
-  const grouped = Object.keys(CATS).reduce((a,c)=>({...a,[c]:wardrobe.filter(w=>w.category===c)}),{});
+  const grouped = Object.keys(CATS).reduce((a,c)=>({...a,[c]:myWardrobe.filter(w=>w.category===c)}),{});
   const ACCENT_SETS = [["#FFD700","#FF69B4"],["#FF69B4","#C77DFF"],["#4FC3F7","#FFD700"]];
 
   return (
@@ -300,7 +315,7 @@ export default function WardrobeAI() {
 
         {/* TABS */}
         <div style={{display:"flex",gap:5,marginBottom:24,background:"rgba(255,255,255,0.05)",borderRadius:16,padding:5}}>
-          {[["wardrobe","🗂 Wardrobe",wardrobe.length],["add","➕ Add Clothes",null],["occasions","🎊 Occasions",null],["suggestions","✨ AI Outfits",suggestions?.outfits?.length||null]].map(([id,label,cnt])=>(
+          {[["wardrobe","🗂 Wardrobe",myWardrobe.length],["add","➕ Add Clothes",null],["occasions","🎊 Occasions",null],["suggestions","✨ AI Outfits",suggestions?.outfits?.length||null]].map(([id,label,cnt])=>(
             <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"10px 4px",border:"none",borderRadius:12,cursor:"pointer",fontFamily:"sans-serif",fontSize:"clamp(10px,1.8vw,13px)",fontWeight:700,background:tab===id?gradA:"transparent",color:tab===id?"#fff":"rgba(255,255,255,0.4)",transition:"all .3s",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
               {label}{cnt!=null&&cnt>0&&<span style={{background:"rgba(255,255,255,0.22)",borderRadius:10,padding:"1px 6px",fontSize:11}}>{cnt}</span>}
             </button>
@@ -310,7 +325,7 @@ export default function WardrobeAI() {
         {/* ═══ WARDROBE ═══ */}
         {tab==="wardrobe"&&(
           <div>
-            {wardrobe.length===0?(
+            {myWardrobe.length===0?(
               <div style={{textAlign:"center",padding:"60px 20px",color:"rgba(255,255,255,0.3)"}}>
                 <div style={{fontSize:60}}>{gender==="female"?"👗":"👔"}</div>
                 <p style={{fontFamily:"sans-serif",fontSize:18,marginTop:14}}>Your wardrobe is empty</p>
@@ -447,7 +462,7 @@ export default function WardrobeAI() {
             {occasion&&(
               <div style={{textAlign:"center"}}>
                 <div style={{fontFamily:"sans-serif",fontSize:13,color:"rgba(255,255,255,0.48)",marginBottom:14}}>
-                  Occasion: <strong style={{color:accent}}>{OCCASIONS.find(o=>o.id===occasion)?.label}</strong> · Wardrobe: <strong style={{color:"#FFD700"}}>{wardrobe.length} items</strong>
+                  Occasion: <strong style={{color:accent}}>{OCCASIONS.find(o=>o.id===occasion)?.label}</strong> · Wardrobe: <strong style={{color:"#FFD700"}}>{myWardrobe.length} items</strong>
                 </div>
                 <button onClick={getSuggestions} disabled={loading} style={{padding:"14px 46px",border:"none",borderRadius:16,cursor:loading?"not-allowed":"pointer",background:loading?"rgba(255,255,255,0.07)":gradA,color:loading?"rgba(255,255,255,0.28)":"#fff",fontFamily:"sans-serif",fontSize:17,fontWeight:700,boxShadow:loading?"none":"0 8px 28px rgba(0,0,0,0.35)"}}>
                   {loading?"✨ AI is Styling...":"✨ Get AI Outfit Suggestions"}
@@ -475,7 +490,7 @@ export default function WardrobeAI() {
 
                 <div style={{display:"flex",flexDirection:"column",gap:22}}>
                   {suggestions.outfits.map((outfit,i)=>{
-                    const ap = buildAvatarParams(outfit.items,gender,wardrobe);
+                    const ap = buildAvatarParams(outfit.items,gender,myWardrobe);
                     const [c1,c2]=ACCENT_SETS[i]||ACCENT_SETS[0];
                     return(
                       <div key={i} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:22,overflow:"hidden"}}>
@@ -514,7 +529,7 @@ export default function WardrobeAI() {
                               <div style={{fontFamily:"sans-serif",fontSize:10,color:"rgba(255,255,255,0.32)",textTransform:"uppercase",letterSpacing:1,marginBottom:7}}>What to Wear</div>
                               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                                 {outfit.items.map((item,j)=>{
-                                  const matched=wardrobe.find(w=>item.toLowerCase().includes(w.type.toLowerCase()));
+                                  const matched=myWardrobe.find(w=>item.toLowerCase().includes(w.type.toLowerCase()));
                                   return(
                                     <div key={j} style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:20,padding:"5px 11px",fontFamily:"sans-serif",fontSize:11,color:"#fff",display:"flex",alignItems:"center",gap:5}}>
                                       {matched?.imagePreview&&<img src={matched.imagePreview} alt="" style={{width:16,height:16,borderRadius:"50%",objectFit:"cover"}}/>}
@@ -550,4 +565,3 @@ export default function WardrobeAI() {
     </div>
   );
 }
-
